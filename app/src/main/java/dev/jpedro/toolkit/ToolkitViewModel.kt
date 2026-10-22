@@ -463,15 +463,52 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
     var updateDownloadUrl by mutableStateOf<String?>(null)
         private set
 
+    data class ParsedVersion(
+        val major: Int,
+        val minor: Int,
+        val patch: Int,
+        val isBeta: Boolean,
+        val betaNumber: Int,
+        val rawTag: String
+    )
+
+    private fun parseVersion(tag: String): ParsedVersion {
+        val clean = tag.trimStart('v', 'b', 'V', 'B')
+        val isBeta = tag.contains("beta", ignoreCase = true) || tag.startsWith("b", ignoreCase = true) || tag.contains("-b", ignoreCase = true)
+        
+        val partsRegex = Regex("(\\d+)(?:\\.(\\d+))?(?:\\.(\\d+))?").find(clean)
+        val major = partsRegex?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val minor = partsRegex?.groupValues?.get(2)?.toIntOrNull() ?: 0
+        val patch = partsRegex?.groupValues?.get(3)?.toIntOrNull() ?: 0
+        
+        val betaNumRegex = Regex("(?:beta|b)[\\s.-]*(\\d+)", RegexOption.IGNORE_CASE).find(tag)
+        val betaNumber = betaNumRegex?.groupValues?.get(1)?.toIntOrNull() ?: if (isBeta) 1 else 0
+
+        return ParsedVersion(major, minor, patch, isBeta, betaNumber, tag)
+    }
+
+    private val versionComparator = Comparator<ParsedVersion> { a, b ->
+        when {
+            a.major != b.major -> a.major.compareTo(b.major)
+            a.minor != b.minor -> a.minor.compareTo(b.minor)
+            a.patch != b.patch -> a.patch.compareTo(b.patch)
+            a.isBeta != b.isBeta -> if (a.isBeta) -1 else 1
+            else -> a.betaNumber.compareTo(b.betaNumber)
+        }
+    }
+
     fun checkForUpdates() {
         viewModelScope.launch(Dispatchers.IO) {
             updateChecking = true
             updateResultNote = null
             updateDownloadUrl = null
             try {
-                val source = settings.value.updateSource
+                val settingsVal = settings.value
+                val channel = settingsVal.updateChannel
+                val source = settingsVal.updateSource
+
                 if (source == dev.jpedro.toolkit.data.UpdateSource.GITHUB) {
-                    val url = java.net.URL("https://api.github.com/repos/jpedrothejo/jpedrotoolkit/releases/latest")
+                    val url = java.net.URL("https://api.github.com/repos/jpedrothejo/jpedrotoolkit/releases")
                     val connection = url.openConnection() as java.net.HttpURLConnection
                     connection.requestMethod = "GET"
                     connection.setRequestProperty("User-Agent", "JpedroToolkitApp")
@@ -480,22 +517,47 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
 
                     if (connection.responseCode == 200) {
                         val response = connection.inputStream.bufferedReader().readText()
-                        val tagNameMatch = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(response)
-                        val apkUrlMatch = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"").find(response)
-                        val htmlUrlMatch = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(response)
-                        val latestTag = tagNameMatch?.groupValues?.get(1)?.trim().orEmpty()
-                        val downloadUrl = apkUrlMatch?.groupValues?.get(1)?.trim()
-                            ?: htmlUrlMatch?.groupValues?.get(1)?.trim()
-                            ?: "https://github.com/jpedrothejo/jpedrotoolkit/releases"
+                        val releaseEntries = mutableListOf<Pair<ParsedVersion, String>>()
+                        
+                        val releaseBlockRegex = Regex("\\{[^}]+\\}").findAll(response)
+                        for (block in releaseBlockRegex) {
+                            val blockText = block.value
+                            val tagNameMatch = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(blockText)
+                            val tag = tagNameMatch?.groupValues?.get(1)?.trim().orEmpty()
+                            if (tag.isNotEmpty()) {
+                                val apkUrlMatch = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"").find(blockText)
+                                val htmlUrlMatch = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(blockText)
+                                val downloadUrl = apkUrlMatch?.groupValues?.get(1)?.trim()
+                                    ?: htmlUrlMatch?.groupValues?.get(1)?.trim()
+                                    ?: "https://github.com/jpedrothejo/jpedrotoolkit/releases"
+                                
+                                val parsed = parseVersion(tag)
+                                releaseEntries.add(parsed to downloadUrl)
+                            }
+                        }
 
-                        if (latestTag.isNotEmpty() && latestTag != "v1.0" && latestTag != "1.0" && latestTag != "b1.2.1" && latestTag != "v1.2.1") {
-                            updateResultNote = "New update available: $latestTag!"
-                            updateDownloadUrl = downloadUrl
+                        val filtered = releaseEntries.filter { (parsed, _) ->
+                            if (channel == dev.jpedro.toolkit.data.UpdateChannel.STABLE) {
+                                !parsed.isBeta && !parsed.rawTag.startsWith("b", ignoreCase = true) && !parsed.rawTag.contains("beta", ignoreCase = true)
+                            } else {
+                                parsed.isBeta || parsed.rawTag.startsWith("b", ignoreCase = true) || parsed.rawTag.contains("beta", ignoreCase = true)
+                            }
+                        }
+
+                        if (filtered.isNotEmpty()) {
+                            val best = filtered.maxWithOrNull(Comparator { a, b -> versionComparator.compare(a.first, b.first) })
+                            if (best != null) {
+                                val (bestVersion, bestUrl) = best
+                                updateResultNote = "New ${channel.label.lowercase()} update available: ${bestVersion.rawTag}!"
+                                updateDownloadUrl = bestUrl
+                            } else {
+                                updateResultNote = "Your software is up to date (${channel.label})"
+                            }
                         } else {
-                            updateResultNote = "Your software is up to date (v1.0)"
+                            updateResultNote = "Your software is up to date (${channel.label})"
                         }
                     } else {
-                        updateResultNote = "Your software is up to date (v1.0)"
+                        updateResultNote = "Your software is up to date (${channel.label})"
                     }
                 } else {
                     // Google Drive / Website source
@@ -508,15 +570,40 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
                     connection.readTimeout = 5000
 
                     if (connection.responseCode == 200) {
-                        updateResultNote = "Google Drive folder checked successfully!"
-                        updateDownloadUrl = driveUrl
+                        val response = connection.inputStream.bufferedReader().readText()
+                        val apkMatches = Regex("([^\"'\\s]+\\.apk)", RegexOption.IGNORE_CASE).findAll(response)
+                        val apkNames = apkMatches.map { it.groupValues[1] }.toList()
+
+                        val parsedApks = apkNames.map { name -> parseVersion(name) }
+
+                        val filteredApks = parsedApks.filter { parsed ->
+                            if (channel == dev.jpedro.toolkit.data.UpdateChannel.STABLE) {
+                                !parsed.isBeta && !parsed.rawTag.startsWith("b", ignoreCase = true) && !parsed.rawTag.contains("beta", ignoreCase = true)
+                            } else {
+                                parsed.isBeta || parsed.rawTag.startsWith("b", ignoreCase = true) || parsed.rawTag.contains("beta", ignoreCase = true)
+                            }
+                        }
+
+                        if (filteredApks.isNotEmpty()) {
+                            val best = filteredApks.maxWithOrNull(Comparator { a, b -> versionComparator.compare(a, b) })
+                            if (best != null) {
+                                updateResultNote = "New ${channel.label.lowercase()} update available: ${best.rawTag}!"
+                                updateDownloadUrl = driveUrl
+                            } else {
+                                updateResultNote = "Google Drive folder checked (${channel.label})"
+                                updateDownloadUrl = driveUrl
+                            }
+                        } else {
+                            updateResultNote = "Google Drive folder checked (${channel.label})"
+                            updateDownloadUrl = driveUrl
+                        }
                     } else {
                         updateResultNote = "Google Drive folder reachable (HTTP ${connection.responseCode})"
                         updateDownloadUrl = driveUrl
                     }
                 }
             } catch (_: Exception) {
-                updateResultNote = "Google Drive update source ready"
+                updateResultNote = "Update check ready"
                 updateDownloadUrl = "https://drive.google.com/drive/folders/1Q8KXeqGaiBgTe2AsPTksIeh8isdcdi_z?usp=sharing"
             } finally {
                 updateChecking = false
