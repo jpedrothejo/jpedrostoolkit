@@ -1,5 +1,6 @@
 package dev.jpedro.toolkit.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.snap
@@ -143,6 +144,14 @@ fun ToolkitRoot(vm: ToolkitViewModel = viewModel()) {
     DisposableEffect(keepOn) {
         view.keepScreenOn = keepOn
         onDispose { view.keepScreenOn = false }
+    }
+
+    BackHandler(enabled = page != Page.HOME) {
+        if (page == Page.SOFTWARE_UPDATE) {
+            page = Page.SETTINGS
+        } else {
+            page = Page.HOME
+        }
     }
 
     ToolkitTheme(settings) {

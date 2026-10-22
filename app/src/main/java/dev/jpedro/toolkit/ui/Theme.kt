@@ -63,10 +63,10 @@ fun paletteFor(theme: ThemeName): Palette = when (theme) {
     )
 }
 
-val LocalPalette = staticCompositionLocalOf { paletteFor(ThemeName.BLUE) }
+val LocalPalette = staticCompositionLocalOf { paletteFor(ThemeName.MATERIAL_EXPRESSIVE) }
 val LocalRoundness = staticCompositionLocalOf { 12.dp }
 val LocalCardOpacity = staticCompositionLocalOf { 0.78f }
-val LocalThemeName = staticCompositionLocalOf { ThemeName.BLUE }
+val LocalThemeName = staticCompositionLocalOf { ThemeName.MATERIAL_EXPRESSIVE }
 
 @Composable
 fun shape(scale: Float = 1f): RoundedCornerShape = RoundedCornerShape(LocalRoundness.current * scale)

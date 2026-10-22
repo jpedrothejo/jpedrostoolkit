@@ -65,6 +65,7 @@ fun SoftwareUpdatePage(vm: ToolkitViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val settings by vm.settings.collectAsStateWithLifecycle()
     val checking = vm.updateChecking
+    val downloading = vm.updateDownloading
     val resultNote = vm.updateResultNote
     val downloadUrl = vm.updateDownloadUrl
     var showMenu by remember { mutableStateOf(false) }
@@ -207,7 +208,7 @@ fun SoftwareUpdatePage(vm: ToolkitViewModel, onBack: () -> Unit) {
                         textAlign = TextAlign.Center
                     )
                     Text(
-                        text = "v1.2 (beta)",
+                        text = "v1.2.1 (beta)",
                         color = Color.White.copy(alpha = 0.75f),
                         fontSize = 17.sp,
                         textAlign = TextAlign.Center
@@ -256,24 +257,48 @@ fun SoftwareUpdatePage(vm: ToolkitViewModel, onBack: () -> Unit) {
                         exit = fadeOut() + shrinkVertically()
                     ) {
                         if (downloadUrl != null) {
+                            val isApk = downloadUrl.endsWith(".apk", ignoreCase = true)
                             Box(
                                 modifier = Modifier
                                     .widthIn(max = 400.dp)
                                     .fillMaxWidth()
                                     .height(56.dp)
                                     .clip(pillShape)
-                                    .background(Color(0xFF10B981))
-                                    .clickable {
-                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
+                                    .background(if (downloading) Color(0xFF047857) else Color(0xFF10B981))
+                                    .clickable(enabled = !downloading) {
+                                        if (isApk) {
+                                            vm.downloadAndInstallUpdate(context)
+                                        } else {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)))
+                                        }
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "Download Update",
-                                    color = Color.White,
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                if (downloading) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Text(
+                                            text = "Downloading update...",
+                                            color = Color.White,
+                                            fontSize = 17.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = if (isApk) "Download & Install Update" else "Download Update",
+                                        color = Color.White,
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }

@@ -43,7 +43,7 @@ enum class UpdateSource(val label: String) {
 }
 
 data class AppSettings(
-    val theme: ThemeName = ThemeName.BLUE,
+    val theme: ThemeName = ThemeName.MATERIAL_EXPRESSIVE,
     val roundness: Float = 12f,
     val cardOpacity: Float = 0.78f,
     val boldText: Boolean = false,

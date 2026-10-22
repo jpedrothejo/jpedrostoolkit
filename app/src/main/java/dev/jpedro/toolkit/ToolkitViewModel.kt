@@ -456,6 +456,8 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
 
     var updateChecking by mutableStateOf(false)
         private set
+    var updateDownloading by mutableStateOf(false)
+        private set
     var updateResultNote by mutableStateOf<String?>(null)
         private set
     var updateDownloadUrl by mutableStateOf<String?>(null)
@@ -477,23 +479,82 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
                 if (connection.responseCode == 200) {
                     val response = connection.inputStream.bufferedReader().readText()
                     val tagNameMatch = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(response)
+                    val apkUrlMatch = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"").find(response)
                     val htmlUrlMatch = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(response)
                     val latestTag = tagNameMatch?.groupValues?.get(1)?.trim().orEmpty()
-                    val downloadUrl = htmlUrlMatch?.groupValues?.get(1)?.trim() ?: "https://github.com/jpedrothejo/jpedrotoolkit/releases"
+                    val downloadUrl = apkUrlMatch?.groupValues?.get(1)?.trim()
+                        ?: htmlUrlMatch?.groupValues?.get(1)?.trim()
+                        ?: "https://github.com/jpedrothejo/jpedrotoolkit/releases"
 
-                    if (latestTag.isNotEmpty() && latestTag != "b1.2" && latestTag != "v1.2") {
+                    if (latestTag.isNotEmpty() && latestTag != "b1.2.1" && latestTag != "v1.2.1" && latestTag != "b1.2" && latestTag != "v1.2") {
                         updateResultNote = "New update available: $latestTag!"
                         updateDownloadUrl = downloadUrl
                     } else {
-                        updateResultNote = "Your software is up to date (b1.2)"
+                        updateResultNote = "Your software is up to date (b1.2.1)"
                     }
                 } else {
-                    updateResultNote = "Your software is up to date (b1.2)"
+                    updateResultNote = "Your software is up to date (b1.2.1)"
                 }
             } catch (_: Exception) {
-                updateResultNote = "Your software is up to date (b1.2)"
+                updateResultNote = "Your software is up to date (b1.2.1)"
             } finally {
                 updateChecking = false
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate(context: Context) {
+        val urlStr = updateDownloadUrl ?: return
+        if (!urlStr.endsWith(".apk", ignoreCase = true)) {
+            viewModelScope.launch(Dispatchers.Main) {
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(urlStr))) }
+            }
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            updateDownloading = true
+            updateResultNote = "Downloading update..."
+            try {
+                val url = java.net.URL(urlStr)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("User-Agent", "JpedroToolkitApp")
+                connection.connect()
+
+                if (connection.responseCode == 200) {
+                    val installerDir = File(context.cacheDir, "installer").apply { mkdirs() }
+                    val apkFile = File(installerDir, "jpedrotoolkit_update.apk")
+
+                    connection.inputStream.use { input ->
+                        apkFile.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+
+                    updateResultNote = "Download complete. Opening installer..."
+                    updateDownloading = false
+
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+                        val settingsIntent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}")).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        }
+                        context.startActivity(settingsIntent)
+                        return@launch
+                    }
+
+                    val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.files", apkFile)
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(contentUri, "application/vnd.android.package-archive")
+                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                } else {
+                    updateResultNote = "Failed to download update (HTTP ${connection.responseCode})"
+                    updateDownloading = false
+                }
+            } catch (e: Exception) {
+                updateResultNote = "Download error: ${e.message}"
+                updateDownloading = false
             }
         }
     }
