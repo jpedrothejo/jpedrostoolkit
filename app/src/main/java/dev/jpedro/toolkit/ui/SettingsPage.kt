@@ -25,6 +25,7 @@ import dev.jpedro.toolkit.core.Tool
 import dev.jpedro.toolkit.data.Keys
 import dev.jpedro.toolkit.data.NavStyle
 import dev.jpedro.toolkit.data.NavPosition
+import dev.jpedro.toolkit.data.NavLayout
 import dev.jpedro.toolkit.data.ThemeName
 import kotlin.math.roundToInt
 
@@ -75,6 +76,13 @@ fun SettingsPage(vm: ToolkitViewModel, onNavigate: (Page) -> Unit = {}) {
                 selected = settings.navPosition,
                 label = { it.label },
                 onSelect = { vm.set(Keys.NAV_POSITION, it.name) }
+            )
+            ChoiceRow(
+                title = "Tab bar layout",
+                options = NavLayout.values().toList(),
+                selected = settings.navLayout,
+                label = { it.label },
+                onSelect = { vm.set(Keys.NAV_LAYOUT, it.name) }
             )
             SwitchSetting("Bold text", settings.boldText, { vm.set(Keys.BOLD_TEXT, it) })
             SwitchSetting("Page animations", settings.animations, { vm.set(Keys.ANIMATIONS, it) })

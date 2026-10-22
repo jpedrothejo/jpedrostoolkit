@@ -97,7 +97,7 @@ class SpeakerWaterEjector(private val context: Context) {
     fun start(frequency: Double, onProgress: (Float) -> Unit, onFinished: () -> Unit) {
         if (isPlaying) return
         isPlaying = true
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+        CoroutineScope(Dispatchers.IO).launch {
             var vibrator: Vibrator? = null
             try {
                 val sampleRate = 44100
@@ -106,6 +106,7 @@ class SpeakerWaterEjector(private val context: Context) {
                     AudioFormat.CHANNEL_OUT_MONO,
                     AudioFormat.ENCODING_PCM_16BIT
                 )
+                val bufferSize = if (minSize > 0) minSize else 4096
 
                 audioTrack = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                     AudioTrack.Builder()
@@ -122,7 +123,7 @@ class SpeakerWaterEjector(private val context: Context) {
                                 .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                                 .build()
                         )
-                        .setBufferSizeInBytes(minSize)
+                        .setBufferSizeInBytes(bufferSize)
                         .setTransferMode(AudioTrack.MODE_STREAM)
                         .build()
                 } else {
@@ -132,12 +133,16 @@ class SpeakerWaterEjector(private val context: Context) {
                         sampleRate,
                         AudioFormat.CHANNEL_OUT_MONO,
                         AudioFormat.ENCODING_PCM_16BIT,
-                        minSize,
+                        bufferSize,
                         AudioTrack.MODE_STREAM
                     )
                 }
 
-                audioTrack?.play()
+                if (audioTrack?.state == AudioTrack.STATE_INITIALIZED) {
+                    audioTrack?.play()
+                } else {
+                    throw IllegalStateException("AudioTrack failed to initialize")
+                }
 
                 vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     val manager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
@@ -147,11 +152,13 @@ class SpeakerWaterEjector(private val context: Context) {
                     context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
                 }
 
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 200, 400), 0))
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator?.vibrate(longArrayOf(0, 400, 200, 400), 0)
+                runCatching {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 200, 400), 0))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator?.vibrate(longArrayOf(0, 400, 200, 400), 0)
+                    }
                 }
 
                 val totalMs = 15000
@@ -174,7 +181,7 @@ class SpeakerWaterEjector(private val context: Context) {
                 }
             } catch (_: Exception) {
             } finally {
-                vibrator?.cancel()
+                runCatching { vibrator?.cancel() }
                 stop()
                 withContext(Dispatchers.Main) {
                     onFinished()
@@ -186,6 +193,8 @@ class SpeakerWaterEjector(private val context: Context) {
     fun stop() {
         isPlaying = false
         try {
+            audioTrack?.pause()
+            audioTrack?.flush()
             audioTrack?.stop()
             audioTrack?.release()
         } catch (_: Exception) {}

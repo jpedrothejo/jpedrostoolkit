@@ -1,6 +1,7 @@
 package dev.jpedro.toolkit.ui
 
 import android.os.Build
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,7 @@ import dev.jpedro.toolkit.ToolkitViewModel
 
 @Composable
 fun DevicePage(vm: ToolkitViewModel) {
+    val ctx = LocalContext.current
     LaunchedEffect(Unit) {
         if (vm.rootReport == null && !vm.checking) vm.runChecks()
         vm.loadImei()
@@ -200,6 +202,7 @@ fun DebloatDialog(vm: ToolkitViewModel, onDismiss: () -> Unit) {
         shape = shape(),
         title = { Text("Debloat & App Manager (${vm.target.label})") },
         text = {
+            val ctx = LocalContext.current
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -266,14 +269,23 @@ fun DebloatDialog(vm: ToolkitViewModel, onDismiss: () -> Unit) {
                                     Text(app.label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                     Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = Base.muted)
                                 }
-                                Checkbox(
-                                    checked = isChecked,
-                                    onCheckedChange = { checked ->
-                                        if (checked) selectedPackages.add(app.packageName)
-                                        else selectedPackages.remove(app.packageName)
-                                    },
-                                    colors = CheckboxDefaults.colors(checkedColor = palette.link)
-                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    SiteButton(
+                                        text = "Open",
+                                        onClick = { vm.openApp(app.packageName, ctx) }
+                                    )
+                                    Checkbox(
+                                        checked = isChecked,
+                                        onCheckedChange = { checked ->
+                                            if (checked) selectedPackages.add(app.packageName)
+                                            else selectedPackages.remove(app.packageName)
+                                        },
+                                        colors = CheckboxDefaults.colors(checkedColor = palette.link)
+                                    )
+                                }
                             }
                         }
                     }

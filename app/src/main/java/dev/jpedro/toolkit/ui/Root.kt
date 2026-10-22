@@ -16,7 +16,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import dev.jpedro.toolkit.data.NavLayout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -30,6 +33,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +60,7 @@ enum class Page(val title: String, val emoji: String, val description: String, v
     FLASH("Flash", "⚡", "Flash Samsung firmware to a phone in Download mode with odin4", true),
     INSTALL("Install", "📦", "Install one or many APKs, or a split set", true),
     POWER("Power", "🔌", "Reboot, recovery, Download mode, bootloader and shutdown", true),
+    FONT("Font", "🔤", "Change system font scale and typography via Shizuku", true),
     SCREENTEST("Screen Test", "📱", "Test screen touch response, stuck pixels and burn-in", true),
     WATEREJECT("Water Eject", "💧", "Eject water from speakers using 165Hz sound waves & haptics", true),
     TERMINAL("Terminal", "💻", "Run shell and adb commands", true),
@@ -63,7 +68,7 @@ enum class Page(val title: String, val emoji: String, val description: String, v
     SOFTWARE_UPDATE("Software Update", "📲", "Software update in One UI 9 style", false)
 }
 
-const val CURRENT_APP_VERSION = "v1.0"
+const val CURRENT_APP_VERSION = "v1.1"
 
 @Composable
 private fun ChangelogDialog(onDismiss: () -> Unit) {
@@ -79,6 +84,18 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("v1.1", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = LocalPalette.current.link)
+                    Text("• Added Font & Typography tab with custom font scale slider and installed font family switching")
+                    Text("• Automatic WRITE_SECURE_SETTINGS permission grant via root/Shizuku so font commands always work")
+                    Text("• Added 'Open' button to Debloat & App Manager to launch any installed app instantly")
+                    Text("• Increased spacing gaps across pages for a spacious and modern UI")
+                    Text("• Added setting in Settings to switch between single-line tab bar and classic scrolling tab bar")
+                    Text("• Fixed Water Ejector crash issue with robust audio track state and buffer checks")
+                    Text("• Set Icons tab bar style and Stable update channel as defaults")
+                    Text("• Upgraded software update checker with bulletproof release JSON parsing and semantic version comparison")
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("v1.0", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = LocalPalette.current.link)
                     Text("Release!!!")
@@ -203,7 +220,7 @@ fun ToolkitRoot(vm: ToolkitViewModel = viewModel()) {
                     )
                 }
                 Column(Modifier.fillMaxSize().statusBarsPadding()) {
-                    if (settings.navPosition == NavPosition.TOP) TopNav(page, settings.navStyle) { page = it }
+                    if (settings.navPosition == NavPosition.TOP) TopNav(page, settings.navStyle, settings.navLayout) { page = it }
                     Crossfade(
                         targetState = page,
                         animationSpec = if (settings.animations) tween(220) else snap(),
@@ -217,6 +234,7 @@ fun ToolkitRoot(vm: ToolkitViewModel = viewModel()) {
                             Page.FLASH -> FlashPage(vm)
                             Page.INSTALL -> InstallPage(vm)
                             Page.POWER -> PowerPage(vm)
+                            Page.FONT -> FontPage(vm)
                             Page.SCREENTEST -> ScreenTestPage(vm)
                             Page.WATEREJECT -> WaterEjectPage(vm)
                             Page.TERMINAL -> TerminalPage(vm)
@@ -225,7 +243,7 @@ fun ToolkitRoot(vm: ToolkitViewModel = viewModel()) {
                         }
                     }
                     if (settings.navPosition == NavPosition.BOTTOM) {
-                        TopNav(page, settings.navStyle, modifier = Modifier.navigationBarsPadding().padding(bottom = 6.dp)) { page = it }
+                        TopNav(page, settings.navStyle, settings.navLayout, modifier = Modifier.navigationBarsPadding().padding(bottom = 6.dp)) { page = it }
                     }
                 }
             }
@@ -234,40 +252,76 @@ fun ToolkitRoot(vm: ToolkitViewModel = viewModel()) {
 }
 
 @Composable
-private fun TopNav(current: Page, style: NavStyle, modifier: Modifier = Modifier, onSelect: (Page) -> Unit) {
+private fun TopNav(current: Page, style: NavStyle, layout: NavLayout, modifier: Modifier = Modifier, onSelect: (Page) -> Unit) {
     val palette = LocalPalette.current
     val navShape = shape()
     Box(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).then(modifier),
+        Modifier.fillMaxWidth().padding(horizontal = if (layout == NavLayout.SINGLE_LINE) 4.dp else 12.dp, vertical = 8.dp).then(modifier),
         contentAlignment = Alignment.Center
     ) {
-        Row(
-            Modifier
-                .widthIn(max = 560.dp)
-                .clip(navShape)
-                .background(Color.Black.copy(alpha = 0.25f))
-                .background(palette.primary)
-                .border(1.dp, Base.border, navShape)
-                .horizontalScroll(rememberScrollState())
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Page.values().filter { it != Page.SOFTWARE_UPDATE }.forEach { page ->
-                val selected = page == current
-                val label = if (style == NavStyle.ICONS || page == Page.HOME) page.emoji else page.title
-                Box(
-                    Modifier
-                        .clip(shape(0.7f))
-                        .background(if (selected) palette.button else Color.Transparent)
-                        .clickable { onSelect(page) }
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Color.White
-                    )
+        if (layout == NavLayout.SINGLE_LINE) {
+            Row(
+                modifier = Modifier
+                    .widthIn(max = 640.dp)
+                    .clip(navShape)
+                    .background(Color.Black.copy(alpha = 0.25f))
+                    .background(palette.primary)
+                    .border(1.dp, Base.border, navShape)
+                    .padding(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(1.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Page.values().filter { it != Page.SOFTWARE_UPDATE }.forEach { page ->
+                    val selected = page == current
+                    val label = if (style == NavStyle.ICONS || page == Page.HOME) page.emoji else page.title
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .clip(shape(0.6f))
+                            .background(if (selected) palette.button else Color.Transparent)
+                            .clickable { onSelect(page) }
+                            .padding(horizontal = 1.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            maxLines = 1,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+        } else {
+            // Classic (Scrolling) style
+            Row(
+                Modifier
+                    .widthIn(max = 560.dp)
+                    .clip(navShape)
+                    .background(Color.Black.copy(alpha = 0.25f))
+                    .background(palette.primary)
+                    .border(1.dp, Base.border, navShape)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Page.values().filter { it != Page.SOFTWARE_UPDATE }.forEach { page ->
+                    val selected = page == current
+                    val label = if (style == NavStyle.ICONS || page == Page.HOME) page.emoji else page.title
+                    Box(
+                        Modifier
+                            .clip(shape(0.7f))
+                            .background(if (selected) palette.button else Color.Transparent)
+                            .clickable { onSelect(page) }
+                            .padding(horizontal = 12.dp, vertical = 7.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White
+                        )
+                    }
                 }
             }
         }

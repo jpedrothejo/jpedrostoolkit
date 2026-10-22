@@ -208,7 +208,7 @@ fun SoftwareUpdatePage(vm: ToolkitViewModel, onBack: () -> Unit) {
                         textAlign = TextAlign.Center
                     )
                     Text(
-                        text = "v1.0",
+                        text = "v1.1",
                         color = Color.White.copy(alpha = 0.75f),
                         fontSize = 17.sp,
                         textAlign = TextAlign.Center

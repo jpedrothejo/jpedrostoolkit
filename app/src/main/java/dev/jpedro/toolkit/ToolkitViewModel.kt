@@ -43,6 +43,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -342,6 +343,109 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
         private set
     val powerLog = mutableStateListOf<String>()
 
+    var fontScale by mutableStateOf("1.0")
+    var fontBusy by mutableStateOf(false)
+        private set
+    val fontLog = mutableStateListOf<String>()
+
+    var selectedFontFamily by mutableStateOf("Default")
+    val installedFonts = mutableStateListOf<String>("Samsung Sans", "Google Sans", "Roboto")
+
+    fun loadInstalledFonts() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val userFonts = mutableSetOf<String>("Samsung Sans", "Google Sans", "Roboto")
+            val cmd = if (target.isLocal) "ls /sdcard/Download/ /sdcard/Fonts/ /data/system/fonts/ 2>/dev/null" else target.shell("ls /sdcard/Download/ /sdcard/Fonts/ /data/system/fonts/ 2>/dev/null")
+            val res = runCatching { toolbox.run(cmd) }.getOrNull()?.output.orEmpty()
+            res.lines().map { it.trim() }.filter { it.endsWith(".ttf", true) || it.endsWith(".otf", true) }.forEach {
+                userFonts.add(it.substringBeforeLast('.').replace("_", " "))
+            }
+            withContext(Dispatchers.Main) {
+                installedFonts.clear()
+                installedFonts.addAll(userFonts.sorted())
+            }
+        }
+    }
+
+    fun applyFontFamily(fontName: String) {
+        selectedFontFamily = fontName
+        val cmd = when {
+            fontName.equals("Default", ignoreCase = true) -> 
+                "settings delete system font_family; settings delete system current_sec_font; settings delete system user_font_style"
+            fontName.contains("Samsung", ignoreCase = true) -> 
+                "settings put system current_sec_font 1; settings put system font_family 'SamsungSans'; settings put system user_font_style 'SamsungSans'"
+            else -> 
+                "settings put system font_family '$fontName'; settings put system user_font_style '$fontName'; " +
+                "if [ -f /sdcard/Download/$fontName.ttf ]; then cp /sdcard/Download/$fontName.ttf /data/system/fonts/custom.ttf; chmod 644 /data/system/fonts/custom.ttf; fi; " +
+                "if [ -f /sdcard/Fonts/$fontName.ttf ]; then cp /sdcard/Fonts/$fontName.ttf /data/system/fonts/custom.ttf; chmod 644 /data/system/fonts/custom.ttf; fi"
+        }
+        runFontCommand(cmd, "Apply System Font: $fontName")
+    }
+
+    fun runFontCommand(cmd: String, description: String) {
+        if (fontBusy) return
+        viewModelScope.launch(Dispatchers.IO) {
+            fontBusy = true
+            fontLog.push("[$description] Running on ${target.label}...")
+            try {
+                val fullCmd = if (target.isLocal) cmd else target.shell(cmd)
+                val res = runCatching { toolbox.run(fullCmd) }.getOrNull()
+                    ?: runCatching { toolbox.run("su -c $cmd") }.getOrNull()
+                    ?: runCatching { toolbox.run("shizuku eval $cmd") }.getOrNull()
+                    ?: toolbox.run(cmd)
+                fontLog.push(res.output.ifBlank { "Command executed successfully." })
+            } catch (e: Exception) {
+                try {
+                    val suRes = toolbox.run("su -c $cmd")
+                    fontLog.push(suRes.output.ifBlank { "Executed via root fallback." })
+                } catch (e2: Exception) {
+                    fontLog.push("Error: ${e.message} (${e2.message})")
+                }
+            } finally {
+                fontBusy = false
+            }
+        }
+    }
+
+    fun applyFontScale(scale: String) {
+        fontScale = scale
+        runFontCommand("settings put system font_scale $scale", "Set Font Scale to $scale")
+    }
+
+    fun getFontScale() {
+        viewModelScope.launch(Dispatchers.IO) {
+            fontBusy = true
+            fontLog.push("Getting current font scale on ${target.label}...")
+            try {
+                val cmd = if (target.isLocal) "settings get system font_scale" else target.shell("settings get system font_scale")
+                val res = toolbox.run(cmd)
+                fontLog.push("Current font scale: ${res.output.trim()}")
+            } catch (e: Exception) {
+                fontLog.push("Error: ${e.message}")
+            } finally {
+                fontBusy = false
+            }
+        }
+    }
+
+    fun openApp(packageName: String, context: Context) {
+        if (target.isLocal) {
+            runCatching {
+                context.packageManager.getLaunchIntentForPackage(packageName)?.let {
+                    context.startActivity(it)
+                }
+            }
+        } else {
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching {
+                    val cmd = target.shell("monkey -p $packageName -c android.intent.category.LAUNCHER 1")
+                    toolbox.run(cmd)
+                }.onFailure {
+                    runCatching { toolbox.run("su -c 'monkey -p $packageName -c android.intent.category.LAUNCHER 1'") }
+                }
+            }
+        }
+    }
+
     var terminalMode by mutableStateOf(TerminalMode.SHELL)
     var terminalRunning by mutableStateOf(false)
         private set
@@ -354,6 +458,7 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             access.requestShizuku()
             access.requestRoot()
+            loadInstalledFonts()
         }
     }
 
@@ -506,6 +611,7 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
                 val settingsVal = settings.value
                 val channel = settingsVal.updateChannel
                 val source = settingsVal.updateSource
+                val currentVersion = parseVersion(dev.jpedro.toolkit.ui.CURRENT_APP_VERSION)
 
                 if (source == dev.jpedro.toolkit.data.UpdateSource.GITHUB) {
                     val url = java.net.URL("https://api.github.com/repos/jpedrothejo/jpedrotoolkit/releases")
@@ -519,14 +625,14 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
                         val response = connection.inputStream.bufferedReader().readText()
                         val releaseEntries = mutableListOf<Pair<ParsedVersion, String>>()
                         
-                        val releaseBlockRegex = Regex("\\{[^}]+\\}").findAll(response)
-                        for (block in releaseBlockRegex) {
-                            val blockText = block.value
-                            val tagNameMatch = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(blockText)
-                            val tag = tagNameMatch?.groupValues?.get(1)?.trim().orEmpty()
+                        val releaseParts = response.split("\"tag_name\"")
+                        for (i in 1 until releaseParts.size) {
+                            val part = releaseParts[i]
+                            val tagMatch = Regex("^\\s*:\\s*\"([^\"]+)\"").find(part)
+                            val tag = tagMatch?.groupValues?.get(1)?.trim().orEmpty()
                             if (tag.isNotEmpty()) {
-                                val apkUrlMatch = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"").find(blockText)
-                                val htmlUrlMatch = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(blockText)
+                                val apkUrlMatch = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"").find(part)
+                                val htmlUrlMatch = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(part)
                                 val downloadUrl = apkUrlMatch?.groupValues?.get(1)?.trim()
                                     ?: htmlUrlMatch?.groupValues?.get(1)?.trim()
                                     ?: "https://github.com/jpedrothejo/jpedrotoolkit/releases"
@@ -546,7 +652,7 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
 
                         if (filtered.isNotEmpty()) {
                             val best = filtered.maxWithOrNull(Comparator { a, b -> versionComparator.compare(a.first, b.first) })
-                            if (best != null) {
+                            if (best != null && versionComparator.compare(best.first, currentVersion) > 0) {
                                 val (bestVersion, bestUrl) = best
                                 updateResultNote = "New ${channel.label.lowercase()} update available: ${bestVersion.rawTag}!"
                                 updateDownloadUrl = bestUrl
@@ -554,60 +660,53 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
                                 updateResultNote = "Your software is up to date (${channel.label})"
                             }
                         } else {
-                            updateResultNote = "Your software is up to date (${channel.label})"
+                            checkLatestReleaseEndpoint(channel, currentVersion)
                         }
                     } else {
-                        updateResultNote = "Your software is up to date (${channel.label})"
+                        checkLatestReleaseEndpoint(channel, currentVersion)
                     }
                 } else {
                     // Google Drive / Website source
                     val driveUrl = "https://drive.google.com/drive/folders/1Q8KXeqGaiBgTe2AsPTksIeh8isdcdi_z?usp=sharing"
-                    val url = java.net.URL(driveUrl)
-                    val connection = url.openConnection() as java.net.HttpURLConnection
-                    connection.requestMethod = "GET"
-                    connection.setRequestProperty("User-Agent", "Mozilla/5.0")
-                    connection.connectTimeout = 5000
-                    connection.readTimeout = 5000
-
-                    if (connection.responseCode == 200) {
-                        val response = connection.inputStream.bufferedReader().readText()
-                        val apkMatches = Regex("([^\"'\\s]+\\.apk)", RegexOption.IGNORE_CASE).findAll(response)
-                        val apkNames = apkMatches.map { it.groupValues[1] }.toList()
-
-                        val parsedApks = apkNames.map { name -> parseVersion(name) }
-
-                        val filteredApks = parsedApks.filter { parsed ->
-                            if (channel == dev.jpedro.toolkit.data.UpdateChannel.STABLE) {
-                                !parsed.isBeta && !parsed.rawTag.startsWith("b", ignoreCase = true) && !parsed.rawTag.contains("beta", ignoreCase = true)
-                            } else {
-                                parsed.isBeta || parsed.rawTag.startsWith("b", ignoreCase = true) || parsed.rawTag.contains("beta", ignoreCase = true)
-                            }
-                        }
-
-                        if (filteredApks.isNotEmpty()) {
-                            val best = filteredApks.maxWithOrNull(Comparator { a, b -> versionComparator.compare(a, b) })
-                            if (best != null) {
-                                updateResultNote = "New ${channel.label.lowercase()} update available: ${best.rawTag}!"
-                                updateDownloadUrl = driveUrl
-                            } else {
-                                updateResultNote = "Google Drive folder checked (${channel.label})"
-                                updateDownloadUrl = driveUrl
-                            }
-                        } else {
-                            updateResultNote = "Google Drive folder checked (${channel.label})"
-                            updateDownloadUrl = driveUrl
-                        }
-                    } else {
-                        updateResultNote = "Google Drive folder reachable (HTTP ${connection.responseCode})"
-                        updateDownloadUrl = driveUrl
-                    }
+                    updateResultNote = "Google Drive update source ready"
+                    updateDownloadUrl = driveUrl
                 }
-            } catch (_: Exception) {
-                updateResultNote = "Update check ready"
-                updateDownloadUrl = "https://drive.google.com/drive/folders/1Q8KXeqGaiBgTe2AsPTksIeh8isdcdi_z?usp=sharing"
+            } catch (e: Exception) {
+                updateResultNote = "Update check failed: ${e.message}"
             } finally {
                 updateChecking = false
             }
+        }
+    }
+
+    private fun checkLatestReleaseEndpoint(channel: dev.jpedro.toolkit.data.UpdateChannel, currentVersion: ParsedVersion) {
+        try {
+            val latestUrl = java.net.URL("https://api.github.com/repos/jpedrothejo/jpedrotoolkit/releases/latest")
+            val latestConn = latestUrl.openConnection() as java.net.HttpURLConnection
+            latestConn.setRequestProperty("User-Agent", "JpedroToolkitApp")
+            latestConn.connectTimeout = 5000
+            if (latestConn.responseCode == 200) {
+                val resp = latestConn.inputStream.bufferedReader().readText()
+                val tag = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(resp)?.groupValues?.get(1)?.trim().orEmpty()
+                val urlStr = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"").find(resp)?.groupValues?.get(1)?.trim()
+                    ?: Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(resp)?.groupValues?.get(1)?.trim()
+                    ?: "https://github.com/jpedrothejo/jpedrotoolkit/releases"
+                if (tag.isNotEmpty()) {
+                    val parsed = parseVersion(tag)
+                    if (versionComparator.compare(parsed, currentVersion) > 0) {
+                        updateResultNote = "New update available: $tag!"
+                        updateDownloadUrl = urlStr
+                    } else {
+                        updateResultNote = "Your software is up to date (${channel.label})"
+                    }
+                } else {
+                    updateResultNote = "Your software is up to date (${channel.label})"
+                }
+            } else {
+                updateResultNote = "Your software is up to date (${channel.label})"
+            }
+        } catch (_: Exception) {
+            updateResultNote = "Your software is up to date (${channel.label})"
         }
     }
 

@@ -27,6 +27,11 @@ enum class NavStyle(val label: String) {
     ICONS("Icons")
 }
 
+enum class NavLayout(val label: String) {
+    SINGLE_LINE("Single-Line (Fit All)"),
+    CLASSIC("Classic (Scrolling)")
+}
+
 enum class NavPosition(val label: String) {
     TOP("Top"),
     BOTTOM("Bottom")
@@ -47,8 +52,9 @@ data class AppSettings(
     val roundness: Float = 12f,
     val cardOpacity: Float = 0.78f,
     val boldText: Boolean = false,
-    val navStyle: NavStyle = NavStyle.LABELS,
+    val navStyle: NavStyle = NavStyle.ICONS,
     val navPosition: NavPosition = NavPosition.BOTTOM,
+    val navLayout: NavLayout = NavLayout.SINGLE_LINE,
     val animations: Boolean = true,
     val showDescriptions: Boolean = true,
     val wallpaperUri: String? = null,
@@ -64,7 +70,7 @@ data class AppSettings(
     val firstRun: Boolean = true,
     val hideImei: Boolean = false,
     val lastVersion: String? = null,
-    val updateChannel: UpdateChannel = UpdateChannel.BETA,
+    val updateChannel: UpdateChannel = UpdateChannel.STABLE,
     val updateSource: UpdateSource = UpdateSource.GITHUB
 )
 
@@ -75,6 +81,7 @@ object Keys {
     val BOLD_TEXT = booleanPreferencesKey("bold_text")
     val NAV_STYLE = stringPreferencesKey("nav_style")
     val NAV_POSITION = stringPreferencesKey("nav_position")
+    val NAV_LAYOUT = stringPreferencesKey("nav_layout")
     val ANIMATIONS = booleanPreferencesKey("animations")
     val SHOW_DESCRIPTIONS = booleanPreferencesKey("show_descriptions")
     val WALLPAPER = stringPreferencesKey("wallpaper")
@@ -106,6 +113,7 @@ private fun Preferences.toSettings(): AppSettings {
         boldText = this[Keys.BOLD_TEXT] ?: d.boldText,
         navStyle = enumOf(Keys.NAV_STYLE, d.navStyle),
         navPosition = enumOf(Keys.NAV_POSITION, d.navPosition),
+        navLayout = enumOf(Keys.NAV_LAYOUT, d.navLayout),
         animations = this[Keys.ANIMATIONS] ?: d.animations,
         showDescriptions = this[Keys.SHOW_DESCRIPTIONS] ?: d.showDescriptions,
         wallpaperUri = this[Keys.WALLPAPER],
