@@ -63,7 +63,7 @@ enum class Page(val title: String, val emoji: String, val description: String, v
     SOFTWARE_UPDATE("Software Update", "📲", "Software update in One UI 9 style", false)
 }
 
-const val CURRENT_APP_VERSION = "b1.2.1"
+const val CURRENT_APP_VERSION = "v1.0"
 
 @Composable
 private fun ChangelogDialog(onDismiss: () -> Unit) {
@@ -79,6 +79,15 @@ private fun ChangelogDialog(onDismiss: () -> Unit) {
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("v1.0", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = LocalPalette.current.link)
+                    Text("Release!!!")
+                    Text("• Automated background APK downloading for software updates")
+                    Text("• Direct installer prompt integration using FileProvider")
+                    Text("• Material You (Dynamic) theme set as default")
+                    Text("• Back button navigation fix (prevents exiting app when deep in tabs)")
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("b1.2", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = LocalPalette.current.link)
                     Text("• Updater tab")
