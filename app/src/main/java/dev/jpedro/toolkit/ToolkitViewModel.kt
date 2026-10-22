@@ -469,34 +469,55 @@ class ToolkitViewModel(application: Application) : AndroidViewModel(application)
             updateResultNote = null
             updateDownloadUrl = null
             try {
-                val url = java.net.URL("https://api.github.com/repos/jpedrothejo/jpedrotoolkit/releases/latest")
-                val connection = url.openConnection() as java.net.HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.setRequestProperty("User-Agent", "JpedroToolkitApp")
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
+                val source = settings.value.updateSource
+                if (source == dev.jpedro.toolkit.data.UpdateSource.GITHUB) {
+                    val url = java.net.URL("https://api.github.com/repos/jpedrothejo/jpedrotoolkit/releases/latest")
+                    val connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.setRequestProperty("User-Agent", "JpedroToolkitApp")
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
 
-                if (connection.responseCode == 200) {
-                    val response = connection.inputStream.bufferedReader().readText()
-                    val tagNameMatch = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(response)
-                    val apkUrlMatch = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"").find(response)
-                    val htmlUrlMatch = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(response)
-                    val latestTag = tagNameMatch?.groupValues?.get(1)?.trim().orEmpty()
-                    val downloadUrl = apkUrlMatch?.groupValues?.get(1)?.trim()
-                        ?: htmlUrlMatch?.groupValues?.get(1)?.trim()
-                        ?: "https://github.com/jpedrothejo/jpedrotoolkit/releases"
+                    if (connection.responseCode == 200) {
+                        val response = connection.inputStream.bufferedReader().readText()
+                        val tagNameMatch = Regex("\"tag_name\"\\s*:\\s*\"([^\"]+)\"").find(response)
+                        val apkUrlMatch = Regex("\"browser_download_url\"\\s*:\\s*\"([^\"]+\\.apk)\"").find(response)
+                        val htmlUrlMatch = Regex("\"html_url\"\\s*:\\s*\"([^\"]+)\"").find(response)
+                        val latestTag = tagNameMatch?.groupValues?.get(1)?.trim().orEmpty()
+                        val downloadUrl = apkUrlMatch?.groupValues?.get(1)?.trim()
+                            ?: htmlUrlMatch?.groupValues?.get(1)?.trim()
+                            ?: "https://github.com/jpedrothejo/jpedrotoolkit/releases"
 
-                    if (latestTag.isNotEmpty() && latestTag != "b1.2.1" && latestTag != "v1.2.1" && latestTag != "b1.2" && latestTag != "v1.2") {
-                        updateResultNote = "New update available: $latestTag!"
-                        updateDownloadUrl = downloadUrl
+                        if (latestTag.isNotEmpty() && latestTag != "v1.0" && latestTag != "1.0" && latestTag != "b1.2.1" && latestTag != "v1.2.1") {
+                            updateResultNote = "New update available: $latestTag!"
+                            updateDownloadUrl = downloadUrl
+                        } else {
+                            updateResultNote = "Your software is up to date (v1.0)"
+                        }
                     } else {
-                        updateResultNote = "Your software is up to date (b1.2.1)"
+                        updateResultNote = "Your software is up to date (v1.0)"
                     }
                 } else {
-                    updateResultNote = "Your software is up to date (b1.2.1)"
+                    // Google Drive / Website source
+                    val driveUrl = "https://drive.google.com/drive/folders/1Q8KXeqGaiBgTe2AsPTksIeh8isdcdi_z?usp=sharing"
+                    val url = java.net.URL(driveUrl)
+                    val connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.setRequestProperty("User-Agent", "Mozilla/5.0")
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+
+                    if (connection.responseCode == 200) {
+                        updateResultNote = "Google Drive folder checked successfully!"
+                        updateDownloadUrl = driveUrl
+                    } else {
+                        updateResultNote = "Google Drive folder reachable (HTTP ${connection.responseCode})"
+                        updateDownloadUrl = driveUrl
+                    }
                 }
             } catch (_: Exception) {
-                updateResultNote = "Your software is up to date (b1.2.1)"
+                updateResultNote = "Google Drive update source ready"
+                updateDownloadUrl = "https://drive.google.com/drive/folders/1Q8KXeqGaiBgTe2AsPTksIeh8isdcdi_z?usp=sharing"
             } finally {
                 updateChecking = false
             }

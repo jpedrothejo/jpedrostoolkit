@@ -39,7 +39,7 @@ enum class UpdateChannel(val label: String) {
 
 enum class UpdateSource(val label: String) {
     GITHUB("GitHub Releases"),
-    WEBSITE("Official Website")
+    WEBSITE("Google Drive / Website")
 }
 
 data class AppSettings(
