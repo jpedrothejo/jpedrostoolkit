@@ -1,6 +1,6 @@
-# JpedroToolkit
+# jpedro's Toolkit
 
-Android app (Kotlin, Jetpack Compose) that uses Shizuku and/or root to manage phones, styled after jpedrothejo.github.io.
+Android app (Kotlin, Jetpack Compose) that uses Shizuku and/or root to manage phones.
 
 ## Pages
 
@@ -25,11 +25,6 @@ The app does not bundle odin4, adb or fastboot. In Settings under Binaries, impo
 - Flashing and adb over USB need raw access to `/dev/bus/usb`, which normally requires root. With Shizuku only, adb over Wi-Fi (`adb connect ip:port` in the Terminal) is the reliable path.
 - Without root, `Soft reboot` is disabled and power actions use `svc power`.
 - The Terminal runs one command at a time and is not an interactive PTY.
-
-
-## App wallpaper
-
-The app starts with a built-in Windows 8 Metro-inspired blue wallpaper. In Settings → App wallpaper, choose an image from the phone to replace it; blur and dimming are available for a selected image. The wallpaper gallery from the website has been removed.
 
 ## Local device features without ADB
 
